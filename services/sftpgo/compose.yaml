@@ -1,0 +1,42 @@
+name: homelab-sftpgo
+
+services:
+  sftpgo:
+    image: drakkan/sftpgo:v2.7.6
+    # systemd starts the Compose project only after the HDD mount is verified.
+    # An autonomous Docker restart would bypass that check.
+    restart: "no"
+    ports:
+      # Administrative UI: laptop loopback only (access from Desktop via SSH tunnel).
+      - "127.0.0.1:8080:8080"
+      # SFTP: laptop LAN IP; do not forward this port on your router.
+      - "192.168.1.19:2022:2022"
+    volumes:
+      # Persistent database, configuration data and backups on the SSD.
+      - type: bind
+        source: ./state
+        target: /srv/sftpgo
+        bind:
+          create_host_path: false
+      # Persistent SFTP host keys and working directory on the SSD.
+      - type: bind
+        source: ./config
+        target: /var/lib/sftpgo
+        bind:
+          create_host_path: false
+      # User uploads on the actual ext4 USB HDD.
+      - type: bind
+        source: /mnt/homelab-hdd/sftpgo-data
+        target: /srv/sftpgo/data
+        bind:
+          create_host_path: false
+    environment:
+      SFTPGO_GRACE_TIME: "20"
+    security_opt:
+      - no-new-privileges:true
+    stop_grace_period: 30s
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
