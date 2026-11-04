@@ -1,4 +1,7 @@
 #!/usr/bin/env bash
+
+# EXECUTE THIS ON DESKTOP
+
 set -euo pipefail
 
 SSH_DIR="$HOME/.ssh"
@@ -34,6 +37,6 @@ chmod 600 "$CONFIG"
 # Copy the public key to the laptop.
 ssh-copy-id -i "$KEY.pub" -p 22 juan@192.168.1.19
 
-# Test the connection.
-ssh homelab
+
+echo 'Desktop setup complete. Run ssh homelab and continue with Hardening'
 
