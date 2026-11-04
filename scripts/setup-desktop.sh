@@ -37,6 +37,5 @@ chmod 600 "$CONFIG"
 # Copy the public key to the laptop.
 ssh-copy-id -i "$KEY.pub" -p 22 juan@192.168.1.19
 
-
-echo 'Desktop setup complete. Run ssh homelab and continue with Hardening'
+echo 'Desktop setup complete. Connect with: ssh homelab'
 

@@ -1,4 +1,7 @@
 #!/usr/bin/env bash
+
+# EXECUTE THIS ON LAPTOP
+
 set -euo pipefail
 
 # Run on the Debian 13 laptop as juan, from its local terminal.
