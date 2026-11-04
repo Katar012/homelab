@@ -11,7 +11,7 @@ sudo ./service-sftpgo.sh install
 
 The installer checks that the mounted ext4 partition's label and UUID match the fstab entry, creates the necessary storage directories, validates Compose, installs `homelab-sftpgo.service` and launches SFTPGo.
 
-## Administration from the Linux Mint desktop
+## Administration from the client desktop
 
 Use the already configured SSH alias:
 
