@@ -16,6 +16,7 @@ info() { printf '\n==> %s\n' "$*"; }
 command -v docker >/dev/null || fail 'Docker is not installed; run setup-laptop.sh first.'
 command -v findmnt >/dev/null || fail 'findmnt is required.'
 command -v blkid >/dev/null || fail 'blkid is required.'
+command -v openssl >/dev/null || fail 'openssl is required (sudo apt install openssl).'
 
 check_hdd() {
   local source fstype uuid label fstab_source
@@ -46,11 +47,35 @@ prepare_dirs() {
   chown "$uid:$gid" "$PROJECT_DIR/state" "$PROJECT_DIR/config" "$HDD_MOUNT/sftpgo-data"
 }
 
+# Generate a certificate once; never overwrite it on subsequent deployments.
+# The certificate is self-signed, so LAN browsers will require explicit trust.
+prepare_https_cert() {
+  local cert_dir="$PROJECT_DIR/config/certs"
+  local cert="$cert_dir/webclient.crt"
+  local key="$cert_dir/webclient.key"
+  local lan_ip=192.168.1.19
+  install -d -m 0750 -o 1000 -g 1000 "$cert_dir"
+  if [[ -e "$cert" && -e "$key" ]]; then
+    info 'Keeping existing HTTPS certificate and private key'
+    return
+  fi
+  [[ ! -e "$cert" && ! -e "$key" ]] || fail 'Only one TLS certificate file exists; refusing to replace either.'
+  info 'Creating a self-signed HTTPS certificate for the LAN IP'
+  openssl req -x509 -newkey rsa:3072 -sha256 -nodes \
+    -keyout "$key" -out "$cert" -days 365 \
+    -subj "/CN=$lan_ip" -addext "subjectAltName=IP:$lan_ip" \
+    >/dev/null 2>&1
+  chown 1000:1000 "$cert" "$key"
+  chmod 0644 "$cert"
+  chmod 0600 "$key"
+}
+
 compose() { docker compose -f "$PROJECT_DIR/compose.yaml" "$@"; }
 
 start_project() {
   check_hdd
   prepare_dirs
+  prepare_https_cert
   compose config --quiet
   compose up -d
   compose ps
@@ -59,6 +84,7 @@ start_project() {
 install_unit() {
   check_hdd
   prepare_dirs
+  prepare_https_cert
   compose config --quiet
   command -v systemd-escape >/dev/null || fail 'systemd-escape is required.'
   local mount_unit

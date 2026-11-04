@@ -3,28 +3,25 @@ name: homelab-sftpgo
 services:
   sftpgo:
     image: drakkan/sftpgo:v2.7.6
-    # systemd starts the Compose project only after the HDD mount is verified.
-    # An autonomous Docker restart would bypass that check.
+    # Startup is controlled by systemd after HDD verification.
     restart: "no"
     ports:
-      # Administrative UI: laptop loopback only (access from Desktop via SSH tunnel).
-      - "127.0.0.1:8080:8080"
-      # SFTP: laptop LAN IP; do not forward this port on your router.
+      # Admin stays accessible only through an SSH tunnel to the laptop.
+      - "127.0.0.1:8080:8081"
+      # SFTP and HTTPS WebClient are exposed to the homelab LAN.
       - "192.168.1.19:2022:2022"
+      - "192.168.1.19:8443:8443"
     volumes:
-      # Persistent database, configuration data and backups on the SSD.
       - type: bind
         source: ./state
         target: /srv/sftpgo
         bind:
           create_host_path: false
-      # Persistent SFTP host keys and working directory on the SSD.
       - type: bind
         source: ./config
         target: /var/lib/sftpgo
         bind:
           create_host_path: false
-      # User uploads on the actual ext4 USB HDD.
       - type: bind
         source: /mnt/homelab-hdd/sftpgo-data
         target: /srv/sftpgo/data
@@ -32,6 +29,25 @@ services:
           create_host_path: false
     environment:
       SFTPGO_GRACE_TIME: "20"
+      # Binding 0: HTTPS WebClient, no WebAdmin UI.
+      SFTPGO_HTTPD__BINDINGS__0__PORT: "8443"
+      SFTPGO_HTTPD__BINDINGS__0__ADDRESS: "0.0.0.0"
+      SFTPGO_HTTPD__BINDINGS__0__ENABLE_WEB_ADMIN: "false"
+      SFTPGO_HTTPD__BINDINGS__0__ENABLE_WEB_CLIENT: "true"
+      SFTPGO_HTTPD__BINDINGS__0__ENABLE_REST_API: "true"
+      # Disable admin-token and admin API-key logins on public listener.
+      SFTPGO_HTTPD__BINDINGS__0__DISABLED_LOGIN_METHODS: "80"
+      SFTPGO_HTTPD__BINDINGS__0__ENABLE_HTTPS: "true"
+      SFTPGO_HTTPD__BINDINGS__0__CERTIFICATE_FILE: "/var/lib/sftpgo/certs/webclient.crt"
+      SFTPGO_HTTPD__BINDINGS__0__CERTIFICATE_KEY_FILE: "/var/lib/sftpgo/certs/webclient.key"
+      # Binding 1: HTTP WebAdmin, published ONLY on host loopback.
+      # Must listen on container 0.0.0.0 for Docker's port publishing.
+      SFTPGO_HTTPD__BINDINGS__1__PORT: "8081"
+      SFTPGO_HTTPD__BINDINGS__1__ADDRESS: "0.0.0.0"
+      SFTPGO_HTTPD__BINDINGS__1__ENABLE_WEB_ADMIN: "true"
+      SFTPGO_HTTPD__BINDINGS__1__ENABLE_WEB_CLIENT: "false"
+      SFTPGO_HTTPD__BINDINGS__1__ENABLE_REST_API: "true"
+      SFTPGO_HTTPD__BINDINGS__1__DISABLE_AUTO_TLS: "true"
     security_opt:
       - no-new-privileges:true
     stop_grace_period: 30s
