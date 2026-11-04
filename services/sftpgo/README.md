@@ -1,39 +1,67 @@
-# SFTPGo homelab service
+# SFTPGo — Debian homelab
 
-## Purpose
+This Compose project runs `drakkan/sftpgo:v2.7.6` and is managed by a systemd service. Install it under `~/homelab/services/sftpgo/`.
 
-SFTPGo v2.7.6 with WebClient HTTPS available on the LAN, WebAdmin accessible only via an SSH tunnel, and SFTP available on TCP 2022. The files/database are persistent across container recreation.
+## Prerequisites
 
-## Current endpoints
+- Docker Engine and Docker Compose plugin installed on the Debian server.
+- External ext4 disk labeled `homelab-hdd`, mounted at `/mnt/homelab-hdd` with a UUID entry in `/etc/fstab`.
+- Configure that disk first using `~/homelab/setup/setup-hdd.sh` if necessary.
+- The laptop's IP should have a DHCP reservation so it remains stable.
+- OpenSSL installed (`sudo apt install openssl` if missing).
 
-- WebClient: `https://192.168.1.19:8443/web/client`
-- WebAdmin: `http://127.0.0.1:8080/web/admin` from desktop after running `ssh -L 8080:127.0.0.1:8080 homelab`
-- SFTP: `192.168.1.19:2022`
+## Install or repair
+
+From this folder:
+
+```bash
+chmod +x service-sftpgo.sh
+sudo ./service-sftpgo.sh install
+sudo ./service-sftpgo.sh status
+docker compose ps
+```
+
+`install` is safe to rerun: it creates absent `state/` and `config/` folders, generates a self-signed HTTPS certificate if absent, installs/enables its systemd unit, and **restarts** the service even if systemd previously reported `active (exited)`. It does not format or relabel the disk.
+
+**Warning:** Deleting `state/` or `config/` destroys SFTPGo state, including local database/accounts, host keys and HTTPS certificates. The deployment can recreate the directories, but cannot recover deleted accounts or keys. Back them up before clearing them.
 
 ## Storage
 
-- SSD: `./state` -> `/srv/sftpgo`
-- SSD: `./config` -> `/var/lib/sftpgo` (including `certs/webclient.crt` and `.key`)
-- External HDD: `/mnt/homelab-hdd/sftpgo-data` -> `/srv/sftpgo/data`
+| Debian host | Container | Purpose |
+|---|---|---|
+| `./state/` (SSD) | `/srv/sftpgo` | Database, backups, application state |
+| `./config/` (SSD) | `/var/lib/sftpgo` | Working directory, host keys, self-signed HTTPS certificate |
+| `/mnt/homelab-hdd/sftpgo-data/` (USB HDD) | `/srv/sftpgo/data` | SFTP user files |
 
-The project needs the existing systemd mount and storage setup. The service script verifies the mounted ext4 disk's label and UUID against `/etc/fstab` before starting. Docker's independent restart is disabled to prevent bypassing this check.
+The HDD is checked for an exact mount, ext4 filesystem, `homelab-hdd` label, and a UUID matching `/etc/fstab` **before service startup**. Docker's independent restart policy is disabled; systemd runs the check on startup. Do not run plain `docker compose up -d` when the USB disk may be missing because that bypasses the script's HDD verification.
 
-## Update existing installation
+## Network
 
-1. Back up the existing `compose.yaml` and `service-sftpgo.sh` in `~/homelab/services/sftpgo`.
-2. Replace both with the new copies; retain your existing `state/` and `config/` folders. **Do not remove the data directories or run `docker compose down -v`.**
-3. Ensure your laptop still uses the LAN IP `192.168.1.19`. If it changes, update both port bindings in `compose.yaml` and `lan_ip` in the service script before installing. When renewing the certificate, generate a new certificate for the new IP.
-4. On Debian: `sudo ./service-sftpgo.sh install` (generates the certificate if absent and restarts/starts through systemd). If the existing service is already running, use `sudo systemctl restart homelab-sftpgo.service` to recreate the container with the new configuration. Run `sudo docker compose ps` and `sudo docker compose logs --tail=50` to check.
-5. Confirm you can access WebClient over HTTPS from a LAN device, and WebAdmin **only** via the SSH tunnel.
+`service-sftpgo.sh` discovers the Debian server's primary IPv4 address at managed startup and writes `LAN_IP=...` into `.env`. Docker Compose uses that IP for SFTP and HTTPS. A default IPv4 route is required. If the LAN address changes, the saved self-signed TLS certificate will no longer match: renew it deliberately after backing up the old cert/key.
 
-## HTTPS trust
+- SFTP: `<server-ip>:2022` (SFTP client, not a browser)
+- WebClient: `https://<server-ip>:8443/web/client` (LAN-facing HTTPS)
+- WebAdmin: `http://127.0.0.1:8080/web/admin` (only over SSH tunnel)
 
-`service-sftpgo.sh` generates a self-signed certificate with an IP SAN for `192.168.1.19`, valid for 365 days. The connection is encrypted, but browsers do not automatically trust the certificate and will display a warning. For trusted browser connections, replace it with a certificate signed by a CA trusted by every client. Do not distribute or import the private key (`webclient.key`).
+On Linux Mint, forward the admin port:
 
-The script reuses existing TLS files if both are present. It will not silently overwrite them. If you intentionally rotate the certificate, first back up the files and follow a controlled renewal process.
+```bash
+ssh -L 8080:127.0.0.1:8080 homelab
+```
 
-## Network / threat model
+Then open `http://127.0.0.1:8080/web/admin` on Linux Mint. The generated certificate is self-signed, so LAN browsers won't trust it until you explicitly configure trust. Never distribute the `.key` file.
 
-WebAdmin is disabled on the HTTPS binding; it listens on a separate container port that Docker publishes to **host** loopback only. LAN clients cannot normally reach `127.0.0.1:8080` on the laptop. HTTPS WebClient listens at the laptop's LAN IP, not on every host interface. Do not forward 8443 or 2022 on your internet router.
+## Operations
 
-The REST API must remain enabled for WebClient functionality, so API security still depends on SFTPGo's authorization. Admin-token and admin API-key login methods are disabled on the LAN listener; authenticated admin API activity should still be tested against your threat model. Other local host users with Docker access have effectively root-level privileges. Docker-published ports can bypass UFW filtering; use router/firewall network policy if your LAN is not trusted.
+```bash
+sudo systemctl restart homelab-sftpgo
+sudo systemctl status homelab-sftpgo
+sudo ./service-sftpgo.sh status
+sudo ./service-sftpgo.sh logs
+```
+
+For a fresh start after deleting persistent directories, rerun `sudo ./service-sftpgo.sh install`. Check `docker compose ps`, `sudo journalctl -u homelab-sftpgo -n 80 --no-pager`, and `sudo docker compose logs --tail=80` if anything fails.
+
+## Security notes
+
+Admin's HTTP port is published only on host loopback. The LAN HTTPS listener has WebAdmin disabled; REST API remains enabled for WebClient and requires SFTPGo authentication and authorization. Docker-published ports can bypass simple UFW expectations. Do not forward ports 8443 or 2022 to the internet. The intended protection against a missing HDD is systemd startup ordering and the checked start command; Docker access remains root-equivalent and can bypass it.

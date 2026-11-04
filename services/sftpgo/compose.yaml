@@ -3,14 +3,12 @@ name: homelab-sftpgo
 services:
   sftpgo:
     image: drakkan/sftpgo:v2.7.6
-    # Startup is controlled by systemd after HDD verification.
+    # Only the systemd service starts the container after checking the HDD.
     restart: "no"
     ports:
-      # Admin stays accessible only through an SSH tunnel to the laptop.
       - "127.0.0.1:8080:8081"
-      # SFTP and HTTPS WebClient are exposed to the homelab LAN.
-      - "192.168.1.19:2022:2022"
-      - "192.168.1.19:8443:8443"
+      - "${LAN_IP:?Run service-sftpgo.sh install first}:2022:2022"
+      - "${LAN_IP:?Run service-sftpgo.sh install first}:8443:8443"
     volumes:
       - type: bind
         source: ./state
@@ -29,19 +27,17 @@ services:
           create_host_path: false
     environment:
       SFTPGO_GRACE_TIME: "20"
-      # Binding 0: HTTPS WebClient, no WebAdmin UI.
+      # HTTPS WebClient, no WebAdmin on the LAN listener.
       SFTPGO_HTTPD__BINDINGS__0__PORT: "8443"
       SFTPGO_HTTPD__BINDINGS__0__ADDRESS: "0.0.0.0"
       SFTPGO_HTTPD__BINDINGS__0__ENABLE_WEB_ADMIN: "false"
       SFTPGO_HTTPD__BINDINGS__0__ENABLE_WEB_CLIENT: "true"
       SFTPGO_HTTPD__BINDINGS__0__ENABLE_REST_API: "true"
-      # Disable admin-token and admin API-key logins on public listener.
       SFTPGO_HTTPD__BINDINGS__0__DISABLED_LOGIN_METHODS: "80"
       SFTPGO_HTTPD__BINDINGS__0__ENABLE_HTTPS: "true"
       SFTPGO_HTTPD__BINDINGS__0__CERTIFICATE_FILE: "/var/lib/sftpgo/certs/webclient.crt"
       SFTPGO_HTTPD__BINDINGS__0__CERTIFICATE_KEY_FILE: "/var/lib/sftpgo/certs/webclient.key"
-      # Binding 1: HTTP WebAdmin, published ONLY on host loopback.
-      # Must listen on container 0.0.0.0 for Docker's port publishing.
+      # HTTP WebAdmin, published on the HOST loopback interface only.
       SFTPGO_HTTPD__BINDINGS__1__PORT: "8081"
       SFTPGO_HTTPD__BINDINGS__1__ADDRESS: "0.0.0.0"
       SFTPGO_HTTPD__BINDINGS__1__ENABLE_WEB_ADMIN: "true"
